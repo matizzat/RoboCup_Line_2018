@@ -1,0 +1,82 @@
+#include <DCMotor.h>
+
+#define pin_s_ir_izq 15
+#define pin_s_ir_der 14
+#define pin_s_ir_ex_der 16
+
+#define time_calibracion 1000
+
+#define velocidad 50
+#define Kp 1
+#define Kd 0
+#define Ki 0//.001
+
+DCMotor motorIzq(M0_EN, M0_D0, M0_D1);
+DCMotor motorDer(M1_EN, M1_D0, M1_D1);
+
+int sIzq, sDer, sMinIzq = 1025, sMinDer = 1025, sMaxIzq = 0, sMaxDer = 0;
+int desviacion_prev = 0, integral = 0, proporcional = 0, derivada_desv = 0;
+
+
+
+void setup() {
+  pinMode(pin_s_ir_izq, INPUT);
+  pinMode(pin_s_ir_der, INPUT);//Obtengo los valores con un mapeo
+  motorIzq.setSpeed(-30);
+  motorDer.setSpeed(30);
+  unsigned long time_init_cal = millis();
+  while(micros() - time_init_cal < time_calibracion){
+    int sD = analogRead(pin_s_ir_der);
+    int sI = analogRead(pin_s_ir_izq);
+    if(sD < sMinDer) sMinDer = sD;
+    if(sD > sMaxDer) sMaxDer = sD;
+    if(sI < sMinIzq) sMinIzq = sI;
+    if(sI > sMaxIzq) sMaxIzq = sI;
+  }
+  motorIzq.setSpeed(30);
+  motorDer.setSpeed(-30);
+  time_init_cal = millis();
+  while(micros() - time_init_cal < 2*time_calibracion){
+    int sD = analogRead(pin_s_ir_der);
+    int sI = analogRead(pin_s_ir_izq);
+    if(sD < sMinDer) sMinDer = sD;
+    if(sD > sMaxDer) sMaxDer = sD;
+    if(sI < sMinIzq) sMinIzq = sI;
+    if(sI > sMaxIzq) sMaxIzq = sI;
+  }
+  motorIzq.setSpeed(-30);
+  motorDer.setSpeed(30);
+  time_init_cal = millis();
+  while(micros() - time_init_cal < time_calibracion);
+  motorIzq.setSpeed(0);
+  motorDer.setSpeed(0);
+
+}
+
+void loop() {
+  //Determino valores de sIzq y sDer
+  unsigned long time_prev = micros();
+  sIzq = 100*(analogRead(pin_s_ir_izq)-sMinIzq)/(sMaxIzq-sMinIzq);
+  sDer = 100*(analogRead(pin_s_ir_der)-sMinDer)/(sMaxIzq-sMinDer);
+  unsigned long time_lectura = micros() - time_prev;
+  int desviacion = sIzq - sDer;
+  pid_maxi(desviacion, time_lectura);
+}
+
+void pid_maxi(int desviacion, unsigned long time){
+  derivada_desv = (desviacion - desviacion_prev) / time;
+  //proporcional = desviacion;
+  integral += desviacion_prev*time;
+
+  int desv_vel = desviacion * Kp + derivada_desv * Kd + integral * Ki;
+
+  if(desv_vel > 0){
+    motorIzq.setSpeed(velocidad);
+    motorDer.setSpeed(velocidad - desv_vel);
+  }
+  else{
+    motorIzq.setSpeed(velocidad + desv_vel);
+    motorDer.setSpeed(velocidad);
+  }
+  desviacion_prev = desviacion;
+}
